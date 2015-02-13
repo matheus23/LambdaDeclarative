@@ -14,16 +14,10 @@ import Data.Vec2 (Vec2)
 import FRP.Behaviour
 import Control.Automaton
 import Widget
+import Util
 
 main :: IO ()
 main = runFormBehaviour (0.5, 0.5) $ widgetToBehaviour $ mapState (centeredHV . ($ True)) $ lambdaW exampleLam
-
-runFormBehaviour :: (Double, Double) -> Behaviour GtkEvent Form -> IO ()
-runFormBehaviour align behaviour = do
-  runFormProgram align behaviour step
-    where step input currentBehaviour = do
-            let newBehaviour = runEvent currentBehaviour input
-            return (newBehaviour, value $ newBehaviour)
 
 data LamExpr
   = Var String

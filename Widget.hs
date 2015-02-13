@@ -12,7 +12,8 @@ foldW initialState stateF = Widget initialState step
 mapState :: (a -> b) -> Widget i a o -> Widget i b o
 mapState f widget = Widget (f $ valueW widget) $ \event -> let (newW, out) = runW widget event in (mapState f newW, out)
 
+mapOutput :: (a -> b) -> Widget i s a -> Widget i s b
+mapOutput f widget = Widget (valueW widget) $ \event -> let (newW, out) = runW widget event in (mapOutput f newW, f out)
 
-widgetToBehaviour :: Widget i s o -> Behaviour i s
-widgetToBehaviour widget = Behaviour (valueW widget) step
-  where step input = widgetToBehaviour $ fst $ runW widget input
+substituteOutput :: o' -> Widget i a o -> Widget i a o'
+substituteOutput = mapOutput . const

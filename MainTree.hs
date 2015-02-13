@@ -16,17 +16,10 @@ import Data.Maybe (fromJust)
 import FRP.Behaviour
 import Control.Automaton
 import Widget
+import Util
 
 main :: IO ()
---main = showFormWindow (0.5, 0.5) $ filled red $ circle 100
 main = runFormBehaviour (0.5, 0.5) $ mapValue centeredHV $ widgetToBehaviour $ mapState ($ True) $ treeW exampleTree
-
-runFormBehaviour :: (Double, Double) -> Behaviour GtkEvent Form -> IO ()
-runFormBehaviour align behaviour = do
-  runFormProgram align behaviour step
-    where step input currentBehaviour = do
-            let newBehaviour = runEvent currentBehaviour input
-            return (newBehaviour, value $ newBehaviour)
 
 data Tree a = Node a (Tree a) (Tree a) | Empty
 
