@@ -27,3 +27,8 @@ executable MainTree
   main-is:             MainTree.hs
   build-depends:       base, DeclarativeGraphics, DeclarativeGraphics-Cairo, DeclarativeGraphics-gtk
   default-language:    Haskell2010
+
+executable TextLine
+  main-is:             TextLine.hs
+  build-depends:       base, DeclarativeGraphics, DeclarativeGraphics-Cairo, DeclarativeGraphics-gtk
+  default-language:    Haskell2010
