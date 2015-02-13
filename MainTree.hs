@@ -60,26 +60,32 @@ drawNode ts col n = append Vec2.down [centeredHV $ text style $ show n, centered
     small = defaultTextStyle { fontSize = 8, fontFamily = "monospace" }
 
 treeEmpty :: Bool -> Form
-treeEmpty True = padded 10 $ outlined (solid red) $ circle 25
-treeEmpty False = padded 10 $ outlined (solid black) $ circle 25
+treeEmpty True = padded 10 $ outlined (solid red) (circle 25) `atop` filled white (circle 25)
+treeEmpty False = padded 10 $ outlined (solid black) (circle 25) `atop` filled white (circle 25)
 
-treeW :: Tree Int -> Widget GtkEvent (Bool -> Form) (Maybe GtkEvent)
+type FocusWidget = Widget GtkEvent (Bool -> Form) (Maybe GtkEvent)
+
+treeW :: Tree Int -> FocusWidget
 treeW Empty = Widget treeEmpty step
   where
     step (KeyPress (Letter 'n')) = (treeW $ Node 0 Empty Empty, Nothing)
     step event = (treeW Empty, Just event)
-treeW (Node num leftTree rightTree) = mapState render $ foldW (SuperNode, treeW leftTree, treeW rightTree) step
+treeW (Node num leftTree rightTree) = appWidget (SuperNode, treeW leftTree, treeW rightTree)
   where
     render (SuperNode, leftW, rightW) focused = treeNode (drawNode SuperNode (if focused then lightBlue else grey) num) (valueW leftW False) (valueW rightW False)
     render (SubLeft, leftW, rightW) focused = treeNode (drawNode SubLeft grey num) (valueW leftW focused) (valueW rightW False)
     render (SubRight, leftW, rightW) focused = treeNode (drawNode SubRight grey num) (valueW leftW False) (valueW rightW focused)
-    step e (SuperNode, leftW, rightW)
-      | e == KeyPress (Special ArrLeft)  = ((SubLeft, leftW, rightW), Nothing)
-      | e == KeyPress (Special ArrRight) = ((SubRight, leftW, rightW), Nothing)
-      | otherwise = ((SuperNode, leftW, rightW), Just e)
-    step e (SubLeft, leftW, rightW) = case runW leftW e of
-      (newLeftW, Just (KeyPress (Special ArrUp))) -> ((SuperNode, newLeftW, rightW), Nothing)
-      (newLeftW, mayEvent) -> ((SubLeft, newLeftW, rightW), mayEvent)
-    step e (SubRight, leftW, rightW) = case runW rightW e of
-      (newRightW, Just (KeyPress (Special ArrUp))) -> ((SuperNode, leftW, newRightW), Nothing)
-      (newRightW, mayEvent) -> ((SubRight, leftW, newRightW), mayEvent)
+    appWidget :: (TreeStructure, FocusWidget, FocusWidget) -> FocusWidget
+    appWidget state = Widget (render state) $ step state
+      where
+        step (SuperNode, leftW, rightW) e
+          | e == KeyPress (Special ArrLeft)   = (appWidget (SubLeft, leftW, rightW), Nothing)
+          | e == KeyPress (Special ArrRight)  = (appWidget (SubRight, leftW, rightW), Nothing)
+          | e == KeyPress (Special Backspace) = (treeW Empty, Nothing)
+          | otherwise = (appWidget (SuperNode, leftW, rightW), Just e)
+        step (SubLeft, leftW, rightW) e = case runW leftW e of
+          (newLeftW, Just (KeyPress (Special ArrUp))) -> (appWidget (SuperNode, newLeftW, rightW), Nothing)
+          (newLeftW, mayEvent) -> (appWidget (SubLeft, newLeftW, rightW), mayEvent)
+        step (SubRight, leftW, rightW) e = case runW rightW e of
+          (newRightW, Just (KeyPress (Special ArrUp))) -> (appWidget (SuperNode, leftW, newRightW), Nothing)
+          (newRightW, mayEvent) -> (appWidget (SubRight, leftW, newRightW), mayEvent)
