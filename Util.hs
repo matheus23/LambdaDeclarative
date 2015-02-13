@@ -1,10 +1,10 @@
 module Util where
 
 import Graphics.Declarative.Gtk.Window
+import Graphics.Declarative.Cairo.Form
 
 import FRP.Behaviour
 import Widget
-
 
 widgetToBehaviour :: Widget i s o -> Behaviour i s
 widgetToBehaviour widget = Behaviour (valueW widget) step
