@@ -12,28 +12,44 @@ import Graphics.Declarative.Gtk.KeyboardInput
 import qualified Data.Vec2 as Vec2
 import Data.Vec2 (Vec2)
 import FRP.Behaviour
+--import Data.Maybe (fromJust)
 import Control.Automaton
 import Widget
 import Util
+import TextLine
+import LambdaCalculus
 
 main :: IO ()
 main = runFormBehaviour (0.5, 0.5) $ widgetToBehaviour $ mapState (centeredHV . ($ True)) $ lambdaW exampleLam
 
+{-
 data LamExpr
   = Var String
-  | Lambda String LamExpr
-  | App LamExpr LamExpr
+  | Lam String LamExpr
+  | App LamExpr LamExpr deriving (Show, Eq)
 
-renderVar :: String -> Form
-renderVar name = text varStyle name
-  where varStyle = defaultTextStyle { fontSize = 10, fontFamily = "monospace" }
+data LValue
+  = Func String LamExpr
+  | Number Int deriving (Show, Eq)
 
-renderLambda :: String -> Form -> Form
-renderLambda varName inner = append Vec2.right [lambda, gap 5 0, var, gap 5 0, arrow, gap 5 0, inner]
+type Env
+  = [(String, LValue)]-- deriving (Show, Eq)
+
+eval :: Env -> LamExpr -> LValue
+eval env (Var str) = case lookup str env of
+  Just value -> value
+  Nothing -> error $ "Can't find variable: " ++ str ++ ", env: " ++ show env
+eval env (Lam str body) = Func str body
+eval env (App func arg) = case eval env func of
+  Func var body -> eval ((var, eval env arg):env) body
+  Number n -> error "Can't apply Function to number!"
+-}
+
+renderLambda :: Form -> Form -> Form
+renderLambda var inner = append Vec2.right [lambda, gap 5 0, var, gap 5 0, arrow, gap 5 0, inner]
   where
     lambda = text defaultTextStyle { fontSize = 10 } "λ"
     arrow = text defaultTextStyle { fontSize = 10 } "→"
-    var = renderVar varName
 
 renderApp :: Form -> Form -> Form
 renderApp function argument = append Vec2.right [addParen function, gap 10 0, addParen argument]
@@ -45,8 +61,8 @@ addParen form = append Vec2.right [text paren "(", form, text paren ")"]
 exampleLam :: LamExpr
 exampleLam = App lambdaNot lambdaTrue
   where
-    lambdaNot = Lambda "p" $ Lambda "a" $ Lambda "b" $ App (App (Var "p") (Var "b")) $ Var "a"
-    lambdaTrue = Lambda "t" $ Lambda "f" $ Var "t"
+    lambdaNot = Lam "p" $ Lam "a" $ Lam "b" $ App (App (Var "p") (Var "b")) $ Var "a"
+    lambdaTrue = Lam "t" $ Lam "f" $ Var "t"
 
 
 data Focus = LeftFocus | RightFocus
@@ -60,17 +76,17 @@ applyIf True f = f
 applyIf False f = id
 
 lambdaW :: LamExpr -> Widget GtkEvent (Bool -> Form) (Maybe GtkEvent)
-lambdaW (Var name) = Widget (\focused -> applyIf focused (addBorder (solid red)) $ renderVar name) $ \event -> (lambdaW (Var name), Just event)
-lambdaW (Lambda var inner) = mapState render $ foldW (False, lambdaW inner) step
+lambdaW (Var name) = mapState snd $ textLineFocusable name
+lambdaW (Lam var inner) = mapState render $ foldW (False, textLineFocusable var, lambdaW inner) step
   where
-    render (editMode, innerW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderLambda var $ valueW innerW (editMode && focused)
-    step e (False, innerW)
-      | e == KeyPress (Special ArrUp) = ((True, innerW), Nothing)
-      | otherwise                     = ((False, innerW), Just e)
-    step e (True, innerW) = case runW innerW e of
-      (newInnerW, Just (KeyPress (Special ArrDown))) -> ((False, newInnerW), Nothing)
-      (newInnerW, Just e) -> ((True, newInnerW), Nothing)
-      (newInnerW, Nothing) -> ((True, newInnerW), Nothing)
+    render (editMode, varW, innerW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderLambda ((snd $ valueW varW) (not editMode && focused)) (valueW innerW (editMode && focused))
+    step e (False, varW, innerW)
+      | e == KeyPress (Special ArrUp) = ((True, varW, innerW), Nothing)
+      | otherwise                     = ((False, newVarW, innerW), mayEvent) where (newVarW, mayEvent) = runW varW e
+    step e (True, varW, innerW) = case runW innerW e of
+      (newInnerW, Just (KeyPress (Special ArrDown))) -> ((False, varW, newInnerW), Nothing)
+      (newInnerW, Just e) -> ((True, varW, newInnerW), Nothing)
+      (newInnerW, Nothing) -> ((True, varW, newInnerW), Nothing)
 lambdaW (App func arg) = mapState render $ foldW (False, LeftFocus, lambdaW func, lambdaW arg) step
   where
     render (editMode, LeftFocus, funcW, argW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderApp (valueW funcW (editMode && focused)) (valueW argW False)

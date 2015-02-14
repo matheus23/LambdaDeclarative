@@ -1,4 +1,4 @@
-module Main where
+module TextLine where
 
 import Graphics.Declarative.Physical2D
 import Graphics.Declarative.Bordered
@@ -18,10 +18,6 @@ import Control.Automaton
 import Widget
 import Util
 
-main :: IO ()
-main = runFormFocusableWidget (0.5, 0.5) $ mapState snd $ textLineFocusable "Philipp"
-
-
 data TextLine = Line { onLeft :: String, onRight :: String }
 
 instance Show TextLine where
@@ -34,24 +30,24 @@ toString (Line left right) = reverse left ++ right
 fromString :: String -> TextLine
 fromString str = Line (reverse str) ""
 
-removeChar :: TextLine -> TextLine
-removeChar (Line (x:left) right) = Line left right
-removeChar tl = tl
+removeChar :: TextLine -> Maybe TextLine
+removeChar (Line (x:left) right) = Just $ Line left right
+removeChar _ = Nothing
 
-deleteChar :: TextLine -> TextLine
-deleteChar (Line left (x:right)) = Line left right
-deleteChar tl = tl
+deleteChar :: TextLine -> Maybe TextLine
+deleteChar (Line left (x:right)) = Just $ Line left right
+deleteChar _ = Nothing
 
 addChar :: Char -> TextLine -> TextLine
 addChar c (Line left right) = Line (c:left) right
 
-moveLeft :: TextLine -> TextLine
-moveLeft (Line (c:left) right) = Line left (c:right)
-moveLeft tl = tl
+moveLeft :: TextLine -> Maybe TextLine
+moveLeft (Line (c:left) right) = Just $ Line left (c:right)
+moveLeft _ = Nothing
 
-moveRight :: TextLine -> TextLine
-moveRight (Line left (c:right)) = Line (c:left) right
-moveRight tl = tl
+moveRight :: TextLine -> Maybe TextLine
+moveRight (Line left (c:right)) = Just $ Line (c:left) right
+moveRight _ = Nothing
 
 textLineFocusable :: String -> Widget GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
 textLineFocusable content = mapState render $ textLine content
@@ -64,8 +60,12 @@ textLineFocusable content = mapState render $ textLine content
 textLine :: String -> Widget GtkEvent TextLine (Maybe GtkEvent)
 textLine content = foldW (fromString content) step
   where
-    step (KeyPress (Special Backspace)) tl = (removeChar tl, Nothing)
-    step (KeyPress (Special ArrRight)) tl = (moveRight tl, Nothing)
-    step (KeyPress (Special ArrLeft)) tl = (moveLeft tl, Nothing)
-    step (KeyPress (Letter c)) tl = (addChar c tl, Nothing)
+    action a object event = case a object of
+      Just sth -> (sth, Nothing)
+      Nothing  -> (object, Just event)
+    step e@(KeyPress (Special Backspace)) tl = action removeChar tl e
+    step e@(KeyPress (Special ArrRight)) tl = action moveRight tl e
+    step e@(KeyPress (Special ArrLeft)) tl = action moveLeft tl e
+    step e@(KeyPress (Special Delete)) tl = action deleteChar tl e
+    step e@(KeyPress (Letter c)) tl = (addChar c tl, Nothing)
     step e tl = (tl, Just e)
