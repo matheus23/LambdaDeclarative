@@ -41,6 +41,12 @@ combineSchroed f (SchroedForm f1 u1) (SchroedForm f2 u2) = SchroedForm (f f1 f2)
 mapSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
 mapSchroed f (SchroedForm foc unfoc) = SchroedForm (f foc) (f unfoc)
 
+mapFocusedSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
+mapFocusedSchroed f (SchroedForm foc unfoc) = SchroedForm (f foc) unfoc
+
+mapUnfocusedSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
+mapUnfocusedSchroed f (SchroedForm foc unfoc) = SchroedForm foc (f unfoc)
+
 getIsFocused :: Bool -> SchroedForm -> Form
 getIsFocused True (SchroedForm f _) = f
 getIsFocused False (SchroedForm _ u) = u
@@ -65,14 +71,20 @@ renderTuple left right = append Vec2.right
     , padded 2 $ centeredVert $ text style ")"]
   where style = font "" 10
 
-addStringBelow :: String -> Form -> Form
-addStringBelow stringBelow upper = append Vec2.down
+addStringBelow :: RGB -> String -> Form -> Form
+addStringBelow color stringBelow upper = append Vec2.down
     [ centeredHoriz $ upper
     , padded 5 midline
     , centeredHoriz $ lower ]
   where
     lower = text (font "serif" 8) stringBelow
-    midline = filled grey $ rectangle (max (graphicWidth upper) (graphicWidth lower) - 10) 2
+    midline = filled color $ rectangle (max (graphicWidth upper) (graphicWidth lower) - 10) 2
+
+addSthBelow :: (Double -> Form) -> Form -> Form
+addSthBelow below upper = append Vec2.down
+    [ centeredHoriz $ upper
+    , centeredHoriz $ padded 5 formBelow ]
+  where formBelow = below (graphicWidth upper - 10)
 
 addBorder :: LineStyle -> Form -> Form
 addBorder ls form = border `atop` form
@@ -94,9 +106,56 @@ textLineSchroed content = mapState render $ textLine content
     cursor = collapseBorder $ alignVert 0 $ filled black $ rectangle 1.3 $ graphicHeight $ text style "|"
     withCursor leftOfCursor rightOfCursor = append Vec2.right [text style leftOfCursor, cursor, text style rightOfCursor]
 
+tupleFocusSchroed :: Focus -> (Form -> Form -> Form) -> SchroedForm -> SchroedForm -> SchroedForm
+tupleFocusSchroed LeftFocus combine left right
+  = SchroedForm
+      { focused   = combine (focused left) (unfocused right)
+      , unfocused = combine (unfocused left) (unfocused right) }
+tupleFocusSchroed RightFocus combine left right
+  = SchroedForm
+      { focused   = combine (unfocused left) (focused right)
+      , unfocused = combine (unfocused left) (unfocused right) }
+
+unfocus :: SchroedForm -> SchroedForm
+unfocus schroedForm = schroedForm { focused = unfocused schroedForm }
+
+
 tupleW :: Tuple -> Widget GtkEvent (Tuple, SchroedForm) (Maybe GtkEvent)
 tupleW (Leaf str) = mapState (\(txt, form) -> (Leaf txt, mapSchroed centeredVert form)) $ textLineSchroed str
-tupleW (Tuple leftT rightT) = mapState render $ foldW (False, LeftFocus, (tupleW leftT, tupleW rightT)) step
+tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey $ foldW (LeftFocus, (tupleW leftT, tupleW rightT)) step
+  where
+    focusKey = KeyPress $ Special Return
+    unfocusKey = KeyPress $ Special Escape
+    render (isInnerFocused, widget) = (Tuple leftT rightT, rendered)
+      where
+        {-
+        renderer focused = applyIf (focused && not isInnerFocused) (addStringBelow value) $ renderTuple leftRender rightRender
+        renderFocused renderer = SchroedForm (renderer True) (renderer False)
+        leftRender = getIsFocused (isInnerFocused && focus == LeftFocus) leftForm
+        rightRender = getIsFocused (isInnerFocused && focus == RightFocus) rightForm
+        -}
+        value = foldTuple concatWords $ Tuple leftT rightT
+        rendered = mapSchroed addValue $ renderFocus isInnerFocused $ applyIf (not isInnerFocused) unfocus $ tupleFocusSchroed focus renderTuple leftForm rightForm
+        addValue = addSthBelow (const $ text (font "serif" 8) value)
+        (leftT, leftForm) = valueW leftW
+        (rightT, rightForm) = valueW rightW
+        (focus, (leftW, rightW)) = valueW widget
+    step e (focus, widgets) = ((newFocus, newWidgets), mayEvent2)
+      where
+        (newWidgets, mayEvent) = runInner focus widgets e
+        (newFocus, mayEvent2) = postProcess handleFocusChange (focus, mayEvent)
+
+    runInner focus widgets e = (setFocused focus newWidget widgets, mayEvent)
+      where (newWidget, mayEvent) = runW (getFocused focus widgets) e
+
+    postProcess f (state, Just event) = f state event
+    postProcess f (state, Nothing)    = (state, Nothing)
+
+    handleFocusChange RightFocus (KeyPress (Special ArrLeft)) = (LeftFocus, Nothing)
+    handleFocusChange LeftFocus (KeyPress (Special ArrRight)) = (RightFocus, Nothing)
+    handleFocusChange focus e = (focus, Just e)
+
+{-tupleW (Tuple leftT rightT) = mapState render $ foldW (False, LeftFocus, (tupleW leftT, tupleW rightT)) step
   where
     render (isInnerFocused, focus, (leftW, rightW)) = (Tuple leftT rightT, rendered)
       where
@@ -113,3 +172,26 @@ tupleW (Tuple leftT rightT) = mapState render $ foldW (False, LeftFocus, (tupleW
       (newWidget, Just (KeyPress (Special ArrLeft))) -> ((True, LeftFocus, setFocused focus newWidget widgets), Nothing)
       (newWidget, Just (KeyPress (Special ArrRight))) -> ((True, RightFocus, setFocused focus newWidget widgets), Nothing)
       (newWidget, mayEvent) -> ((True, focus, setFocused focus newWidget widgets), mayEvent)
+-}
+
+
+renderFocus isInnerFocused innerForm = mapUnfocusedSchroed addUnfocusedLineBelow $ mapFocusedSchroed addLineBelow innerForm
+  where
+    addLineBelow
+      | isInnerFocused = addUnfocusedLineBelow
+      | otherwise      = addSthBelow (horizLine orange)
+
+    addUnfocusedLineBelow = addSthBelow (horizLine grey)
+
+    horizLine color width = filled color $ rectangle width 2
+
+focusWrapper :: Eq e => e -> e -> Widget e s (Maybe e) -> Widget e (Bool, Widget e s (Maybe e)) (Maybe e)
+focusWrapper keyFocus keyUnfocus widget = foldW (True, widget) step
+  where
+    step e (False, widget)
+      | e == keyFocus = ((True, widget), Nothing)
+      | otherwise     = ((False, widget), Just e)
+    step e (True, widget) = case returnedE of
+      Just event | event == keyUnfocus -> ((False, newWidget), Nothing)
+      otherwise                        -> ((True, newWidget), returnedE)
+      where (newWidget, returnedE) = runW widget e

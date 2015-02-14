@@ -20,50 +20,28 @@ import TextLine
 import LambdaCalculus
 
 main :: IO ()
-main = runFormBehaviour (0.5, 0.5) $ widgetToBehaviour $ mapState (centeredHV . ($ True)) $ lambdaW exampleLam
+main = runFormBehaviour (0.5, 0.5) $ widgetToBehaviour $ mapState (centeredHoriz . ($ True) . snd) $ lambdaW exampleLam
 
-{-
-data LamExpr
-  = Var String
-  | Lam String LamExpr
-  | App LamExpr LamExpr deriving (Show, Eq)
+textStyle :: TextStyle
+textStyle = defaultTextStyle { fontSize = 18 }
 
-data LValue
-  = Func String LamExpr
-  | Number Int deriving (Show, Eq)
-
-type Env
-  = [(String, LValue)]-- deriving (Show, Eq)
-
-eval :: Env -> LamExpr -> LValue
-eval env (Var str) = case lookup str env of
-  Just value -> value
-  Nothing -> error $ "Can't find variable: " ++ str ++ ", env: " ++ show env
-eval env (Lam str body) = Func str body
-eval env (App func arg) = case eval env func of
-  Func var body -> eval ((var, eval env arg):env) body
-  Number n -> error "Can't apply Function to number!"
--}
+textStyleM :: TextStyle
+textStyleM = textStyle { fontFamily = "monospace" }
 
 renderLambda :: Form -> Form -> Form
 renderLambda var inner = append Vec2.right [lambda, gap 5 0, var, gap 5 0, arrow, gap 5 0, inner]
   where
-    lambda = text defaultTextStyle { fontSize = 10 } "λ"
-    arrow = text defaultTextStyle { fontSize = 10 } "→"
+    lambda = text textStyle "λ"
+    arrow = text textStyle "→"
 
 renderApp :: Form -> Form -> Form
-renderApp function argument = append Vec2.right [addParen function, gap 10 0, addParen argument]
+renderApp function argument = addParen $ append Vec2.right [function, gap 10 0, argument]
 
 addParen :: Form -> Form
-addParen form = append Vec2.right [text paren "(", form, text paren ")"]
-  where paren = defaultTextStyle { fontSize = 10 }
+addParen form = append Vec2.right [text textStyle "(", form, text textStyle ")"]
 
 exampleLam :: LamExpr
-exampleLam = App lambdaNot lambdaTrue
-  where
-    lambdaNot = Lam "p" $ Lam "a" $ Lam "b" $ App (App (Var "p") (Var "b")) $ Var "a"
-    lambdaTrue = Lam "t" $ Lam "f" $ Var "t"
-
+exampleLam = App notLam trueLam
 
 data Focus = LeftFocus | RightFocus
 
@@ -71,15 +49,36 @@ addBorder :: LineStyle -> Form -> Form
 addBorder ls form = border `atop` form
   where border = outlined ls $ rectangleFromBB $ Border.getBoundingBox $ getBorder form
 
+addStringBelow :: String -> Form -> Form
+addStringBelow stringBelow upper = append Vec2.down
+    [ centeredHoriz $ upper
+    , padded 5 midline
+    , centeredHoriz $ lower ]
+  where
+    lower = text (font "serif" 8) stringBelow
+    midline = filled grey $ rectangle (max (graphicWidth upper) (graphicWidth lower) - 10) 2
+
 applyIf :: Bool -> (a -> a) -> a -> a
 applyIf True f = f
 applyIf False f = id
 
-lambdaW :: LamExpr -> Widget GtkEvent (Bool -> Form) (Maybe GtkEvent)
-lambdaW (Var name) = mapState snd $ textLineFocusable name
-lambdaW (Lam var inner) = mapState render $ foldW (False, textLineFocusable var, lambdaW inner) step
+textLineFoc :: TextStyle -> String -> Widget GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
+textLineFoc style content = mapState render $ textLine content
   where
-    render (editMode, varW, innerW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderLambda ((snd $ valueW varW) (not editMode && focused)) (valueW innerW (editMode && focused))
+    render line = (toString line, renderForm line)
+    renderForm (Line left right) True = withCursor (reverse left) right
+    renderForm line False = text style $ toString line
+    cursor = collapseBorder $ alignVert 0 $ filled black $ rectangle 1.3 $ graphicHeight $ text style "|"
+    withCursor leftOfCursor rightOfCursor = append Vec2.right [text style leftOfCursor, cursor, text style rightOfCursor]
+
+lambdaW :: LamExpr -> Widget GtkEvent (Env -> (LamExpr, Bool -> Form)) (Maybe GtkEvent)
+lambdaW (Var name) = mapState (\(str, form) -> (Var str, form)) $ textLineFoc textStyleM name
+lambdaW (Lam var inner) = mapState render $ foldW (False, textLineFoc textStyleM var, lambdaW inner) step
+  where
+    render (innerHasFocus, varW, innerW) env focused = applyIf selfFocus (addStringBelow lam . addBorder (solid red)) $ renderLambda ((snd $ valueW varW) selfFocus) (snd $ valueW innerW (innerHasFocus && focused))
+      where
+        selfFocus = not innerHasFocus && focused
+        lam = show $ eval
     step e (False, varW, innerW)
       | e == KeyPress (Special ArrUp) = ((True, varW, innerW), Nothing)
       | otherwise                     = ((False, newVarW, innerW), mayEvent) where (newVarW, mayEvent) = runW varW e
@@ -89,11 +88,13 @@ lambdaW (Lam var inner) = mapState render $ foldW (False, textLineFocusable var,
       (newInnerW, Nothing) -> ((True, varW, newInnerW), Nothing)
 lambdaW (App func arg) = mapState render $ foldW (False, LeftFocus, lambdaW func, lambdaW arg) step
   where
-    render (editMode, LeftFocus, funcW, argW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderApp (valueW funcW (editMode && focused)) (valueW argW False)
-    render (editMode, RightFocus, funcW, argW) focused = applyIf (not editMode && focused) (addBorder (solid red)) $ renderApp (valueW funcW False) (valueW argW (editMode && focused))
-    step e (False, editMode, funcW, argW)
-      | e == KeyPress (Special ArrUp) = ((True, editMode, funcW, argW), Nothing)
-      | otherwise                     = ((False, editMode, funcW, argW), Just e)
+    render (innerHasFocus, LeftFocus, funcW, argW) focused = applyIf selfFocus (addStringBelow lam . addBorder (solid red)) $ renderApp (valueW funcW (innerHasFocus && focused)) (valueW argW False)
+      where selfFocus = not innerHasFocus && focused
+    render (innerHasFocus, RightFocus, funcW, argW) focused = applyIf selfFocus (addStringBelow lam . addBorder (solid red)) $ renderApp (valueW funcW False) (valueW argW (innerHasFocus && focused))
+      where selfFocus = not innerHasFocus && focused
+    step e (False, innerHasFocus, funcW, argW)
+      | e == KeyPress (Special ArrUp) = ((True, innerHasFocus, funcW, argW), Nothing)
+      | otherwise                     = ((False, innerHasFocus, funcW, argW), Just e)
     step e (True, LeftFocus, funcW, argW) = case runW funcW e of
       (newFuncW, Just (KeyPress (Special ArrDown))) -> ((False, LeftFocus, newFuncW, argW), Nothing)
       (newFuncW, Just (KeyPress (Special ArrRight))) -> ((True, RightFocus, newFuncW, argW), Nothing)

@@ -49,10 +49,9 @@ moveRight :: TextLine -> Maybe TextLine
 moveRight (Line left (c:right)) = Just $ Line (c:left) right
 moveRight _ = Nothing
 
-textLineFocusable :: String -> Widget GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
-textLineFocusable content = mapState render $ textLine content
+textLineFocusable :: TextStyle -> String -> Widget GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
+textLineFocusable style content = mapState render $ textLine content
   where
-    style = font "monospace" 8
     render line = (toString line, renderToForm line)
     renderToForm line True = text style $ show line
     renderToForm line False = text style $ toString line
