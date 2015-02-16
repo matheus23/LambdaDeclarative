@@ -32,3 +32,8 @@ executable Tuples
   main-is:             Tuples.hs
   build-depends:       base, DeclarativeGraphics, DeclarativeGraphics-Cairo, DeclarativeGraphics-gtk
   default-language:    Haskell2010
+
+executable Equations
+  main-is:             Equations.hs
+  build-depends:       base, DeclarativeGraphics, DeclarativeGraphics-Cairo, DeclarativeGraphics-gtk
+  default-language:    Haskell2010

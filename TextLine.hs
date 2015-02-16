@@ -28,7 +28,7 @@ toString (Line left right) = reverse left ++ right
 
 -- cursor on the right
 fromString :: String -> TextLine
-fromString str = Line (reverse str) ""
+fromString str = Line "" str
 
 removeChar :: TextLine -> Maybe TextLine
 removeChar (Line (x:left) right) = Just $ Line left right
@@ -59,12 +59,9 @@ textLineFocusable style content = mapState render $ textLine content
 textLine :: String -> Widget GtkEvent TextLine (Maybe GtkEvent)
 textLine content = foldW (fromString content) step
   where
-    action a object event = case a object of
-      Just sth -> (sth, Nothing)
-      Nothing  -> (object, Just event)
-    step e@(KeyPress (Special Backspace)) tl = action removeChar tl e
-    step e@(KeyPress (Special ArrRight)) tl = action moveRight tl e
-    step e@(KeyPress (Special ArrLeft)) tl = action moveLeft tl e
-    step e@(KeyPress (Special Delete)) tl = action deleteChar tl e
+    step e@(KeyPress (Special Backspace)) (Line (_:left) right) = (Line left right, Nothing)
+    step e@(KeyPress (Special ArrRight)) (Line left (c:right)) = (Line (c:left) right, Nothing)
+    step e@(KeyPress (Special ArrLeft)) (Line (c:left) right) = (Line left (c:right), Nothing)
+    step e@(KeyPress (Special Delete)) (Line left (_:right)) = (Line left right, Nothing)
     step e@(KeyPress (Letter c)) tl = (addChar c tl, Nothing)
     step e tl = (tl, Just e)
