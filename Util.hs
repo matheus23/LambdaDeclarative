@@ -8,6 +8,7 @@ import FRP.Behaviour
 import ReactBox
 
 import qualified Data.Vec2 as Vec2
+import Data.Vec2 as Vec2
 
 type Widget e s = ReactBox e s (Maybe e)
 
@@ -39,14 +40,20 @@ windowAligned alignment formB = merge alignWindow windowSize formB
   where alignWindow (w, h) form = move (fromIntegral w / 2, fromIntegral h / 2) form
 
 draggableForm :: Behaviour GtkEvent Form -> Behaviour GtkEvent Form
-draggableForm formB = merge move (mouseDrag (0, 0)) formB
+draggableForm formB = merge move (easing 0.8 $ mouseDrag (0, 0)) formB
 
-data DragState = NotDragging | Dragging (Double, Double) deriving (Show, Eq)
+easing :: Double -> Behaviour GtkEvent Vec2 -> Behaviour GtkEvent Vec2
+easing weight behaviour = mapValue snd $ fold (behaviour, value behaviour) ease
+  where 
+    ease Tick (b, actual) = (newB, (Vec2.scale weight actual) `Vec2.add` (Vec2.scale (1-weight) $ value newB)) where newB = runEvent b Tick
+    ease e (b, actual) = (newB, actual) where newB = runEvent b e
 
-mouseDrag :: (Double, Double) -> Behaviour GtkEvent (Double, Double)
+data DragState = NotDragging | Dragging Vec2 Vec2 deriving (Show, Eq)
+
+mouseDrag :: Vec2 -> Behaviour GtkEvent Vec2
 mouseDrag initialPos = mapValue snd $ fold (NotDragging, initialPos) step
   where
-    step (ButtonPress pos RightButton) (NotDragging, dragPos) = (Dragging pos, dragPos)
-    step (MouseMove pos) (Dragging dragStartPos, _) = (Dragging dragStartPos, pos `Vec2.add` (dragStartPos `Vec2.to` pos))
-    step (ButtonRelease pos RightButton) (Dragging dragStartPos, dragPos) = (NotDragging, pos `Vec2.add` (dragStartPos `Vec2.to` pos))
+    step (ButtonPress pos RightButton)   (NotDragging, dragPos) = (Dragging pos dragPos, dragPos)
+    step (MouseMove pos)                 (Dragging dragStartPos prevDragPos, _) = (Dragging dragStartPos prevDragPos, prevDragPos `Vec2.add` (dragStartPos `Vec2.to` pos))
+    step (ButtonRelease pos RightButton) (Dragging dragStartPos prevDragPos, _) = (NotDragging, prevDragPos `Vec2.add` (dragStartPos `Vec2.to` pos))
     step _ state = state
