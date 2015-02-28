@@ -13,9 +13,10 @@ import qualified Data.Vec2 as Vec2
 import Data.Vec2 (Vec2)
 import FRP.Behaviour
 import Control.Automaton
-import Widget
+import ReactBox
 import Util
 import TextLine
+import FocusForm
 
 main :: IO ()
 main = runFormWidget (0.5, 0.5) $ mapState (centeredHoriz . focused . snd) $ tupleW exampleTuple
@@ -23,8 +24,6 @@ main = runFormWidget (0.5, 0.5) $ mapState (centeredHoriz . focused . snd) $ tup
 data Tuple = Tuple Tuple Tuple | Leaf String
 
 data Focus = LeftFocus | RightFocus deriving (Eq)
-
-data SchroedForm = SchroedForm { focused :: Form, unfocused :: Form }
 
 exampleTuple = Tuple (Tuple (Leaf "hi") (Leaf "this")) (Tuple (Leaf "is") (Tuple (Leaf "phil,") (Leaf "yeah!")))
 
@@ -34,22 +33,6 @@ foldTuple f (Tuple left right) = f (foldTuple f left) (foldTuple f right)
 
 concatWords :: String -> String -> String
 concatWords a b = a ++ " " ++ b
-
-combineSchroed :: (Form -> Form -> Form) -> SchroedForm -> SchroedForm -> SchroedForm
-combineSchroed f (SchroedForm f1 u1) (SchroedForm f2 u2) = SchroedForm (f f1 f2) (f u1 u2)
-
-mapSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
-mapSchroed f (SchroedForm foc unfoc) = SchroedForm (f foc) (f unfoc)
-
-mapFocusedSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
-mapFocusedSchroed f (SchroedForm foc unfoc) = SchroedForm (f foc) unfoc
-
-mapUnfocusedSchroed :: (Form -> Form) -> SchroedForm -> SchroedForm
-mapUnfocusedSchroed f (SchroedForm foc unfoc) = SchroedForm foc (f unfoc)
-
-getIsFocused :: Bool -> SchroedForm -> Form
-getIsFocused True (SchroedForm f _) = f
-getIsFocused False (SchroedForm _ u) = u
 
 getFocused :: Focus -> (a, a) -> a
 getFocused LeftFocus (left, _) = left
@@ -90,39 +73,39 @@ addBorder :: LineStyle -> Form -> Form
 addBorder ls form = border `atop` form
   where border = outlined ls $ rectangleFromBB $ Border.getBoundingBox $ getBorder form
 
-renderBorder :: Bool -> SchroedForm -> SchroedForm
-renderBorder True (SchroedForm focused unfocused) = SchroedForm (addBorder (solid red) focused) unfocused
+renderBorder :: Bool -> FocusForm -> FocusForm
+renderBorder True (FocusForm focused unfocused) = FocusForm (addBorder (solid red) focused) unfocused
 renderBorder False form = form
 
 applyIf :: Bool -> (a -> a) -> a -> a
 applyIf True f = f
 applyIf False f = id
 
-textLineSchroed :: String -> Widget GtkEvent (String, SchroedForm) (Maybe GtkEvent)
+textLineSchroed :: String -> ReactBox GtkEvent (String, FocusForm) (Maybe GtkEvent)
 textLineSchroed content = mapState render $ textLine content
   where
     style = font "monospace" 8
-    render line@(Line left right) = (toString line, SchroedForm (withCursor (reverse left) right) (text style $ toString line))
+    render line@(Line left right) = (toString line, FocusForm (withCursor (reverse left) right) (text style $ toString line))
     cursor = collapseBorder $ alignVert 0 $ filled black $ rectangle 1.3 $ graphicHeight $ text style "|"
     withCursor leftOfCursor rightOfCursor = append Vec2.right [text style leftOfCursor, cursor, text style rightOfCursor]
 
-tupleFocusSchroed :: Focus -> (Form -> Form -> Form) -> SchroedForm -> SchroedForm -> SchroedForm
+tupleFocusSchroed :: Focus -> (Form -> Form -> Form) -> FocusForm -> FocusForm -> FocusForm
 tupleFocusSchroed LeftFocus combine left right
-  = SchroedForm
+  = FocusForm
       { focused   = combine (focused left) (unfocused right)
       , unfocused = combine (unfocused left) (unfocused right) }
 tupleFocusSchroed RightFocus combine left right
-  = SchroedForm
+  = FocusForm
       { focused   = combine (unfocused left) (focused right)
       , unfocused = combine (unfocused left) (unfocused right) }
 
-unfocus :: SchroedForm -> SchroedForm
-unfocus schroedForm = schroedForm { focused = unfocused schroedForm }
+unfocus :: FocusForm -> FocusForm
+unfocus FocusForm = FocusForm { focused = unfocused FocusForm }
 
 
-tupleW :: Tuple -> Widget GtkEvent (Tuple, SchroedForm) (Maybe GtkEvent)
-tupleW (Leaf str) = mapState (\(txt, form) -> (Leaf txt, mapSchroed centeredVert form)) $ textLineSchroed str
-tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey $ foldW (LeftFocus, (tupleW leftT, tupleW rightT)) step
+tupleW :: Tuple -> ReactBox GtkEvent (Tuple, FocusForm) (Maybe GtkEvent)
+tupleW (Leaf str) = mapState (\(txt, form) -> (Leaf txt, mapBothForms centeredVert form)) $ textLineSchroed str
+tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey $ steppingBox (LeftFocus, (tupleW leftT, tupleW rightT)) step
   where
     focusKey = KeyPress $ Special Return
     unfocusKey = KeyPress $ Special Escape
@@ -130,23 +113,23 @@ tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey
       where
         {-
         renderer focused = applyIf (focused && not isInnerFocused) (addStringBelow value) $ renderTuple leftRender rightRender
-        renderFocused renderer = SchroedForm (renderer True) (renderer False)
+        renderFocused renderer = FocusForm (renderer True) (renderer False)
         leftRender = getIsFocused (isInnerFocused && focus == LeftFocus) leftForm
         rightRender = getIsFocused (isInnerFocused && focus == RightFocus) rightForm
         -}
         value = foldTuple concatWords $ Tuple leftT rightT
-        rendered = mapSchroed addValue $ renderFocus isInnerFocused $ applyIf (not isInnerFocused) unfocus $ tupleFocusSchroed focus renderTuple leftForm rightForm
+        rendered = mapBothForms addValue $ renderFocus isInnerFocused $ applyIf (not isInnerFocused) unfocus $ tupleFocusSchroed focus renderTuple leftForm rightForm
         addValue = addSthBelow (const $ text (font "serif" 8) value)
-        (leftT, leftForm) = valueW leftW
-        (rightT, rightForm) = valueW rightW
-        (focus, (leftW, rightW)) = valueW widget
+        (leftT, leftForm) = boxValue leftW
+        (rightT, rightForm) = boxValue rightW
+        (focus, (leftW, rightW)) = boxValue widget
     step e (focus, widgets) = ((newFocus, newWidgets), mayEvent2)
       where
         (newWidgets, mayEvent) = runInner focus widgets e
         (newFocus, mayEvent2) = postProcess handleFocusChange (focus, mayEvent)
 
     runInner focus widgets e = (setFocused focus newWidget widgets, mayEvent)
-      where (newWidget, mayEvent) = runW (getFocused focus widgets) e
+      where (newWidget, mayEvent) = runBox (getFocused focus widgets) e
 
     postProcess f (state, Just event) = f state event
     postProcess f (state, Nothing)    = (state, Nothing)
@@ -155,19 +138,19 @@ tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey
     handleFocusChange LeftFocus (KeyPress (Special ArrRight)) = (RightFocus, Nothing)
     handleFocusChange focus e = (focus, Just e)
 
-{-tupleW (Tuple leftT rightT) = mapState render $ foldW (False, LeftFocus, (tupleW leftT, tupleW rightT)) step
+{-tupleW (Tuple leftT rightT) = mapState render $ steppingBox (False, LeftFocus, (tupleW leftT, tupleW rightT)) step
   where
     render (isInnerFocused, focus, (leftW, rightW)) = (Tuple leftT rightT, rendered)
       where
-        rendered = SchroedForm (applyIf (not isInnerFocused) (addStringBelow $ foldTuple concatWords $ Tuple leftT rightT) r) r where r = renderTuple leftRender rightRender
+        rendered = FocusForm (applyIf (not isInnerFocused) (addStringBelow $ foldTuple concatWords $ Tuple leftT rightT) r) r where r = renderTuple leftRender rightRender
         leftRender = getIsFocused (isInnerFocused && focus == LeftFocus) leftForm
         rightRender = getIsFocused (isInnerFocused && focus == RightFocus) rightForm
-        (leftT, leftForm) = valueW leftW
-        (rightT, rightForm) = valueW rightW
+        (leftT, leftForm) = boxValue leftW
+        (rightT, rightForm) = boxValue rightW
     step e (False, focus, widgets)
       | e == (KeyPress (Special Return)) = ((True, focus, widgets), Nothing)
       | otherwise = ((False, focus, widgets), Just e)
-    step e (True, focus, widgets) = case runW (getFocused focus widgets) e of
+    step e (True, focus, widgets) = case runBox (getFocused focus widgets) e of
       (newWidget, Just (KeyPress (Special Escape))) -> ((False, focus, setFocused focus newWidget widgets), Nothing)
       (newWidget, Just (KeyPress (Special ArrLeft))) -> ((True, LeftFocus, setFocused focus newWidget widgets), Nothing)
       (newWidget, Just (KeyPress (Special ArrRight))) -> ((True, RightFocus, setFocused focus newWidget widgets), Nothing)
@@ -175,7 +158,7 @@ tupleW (Tuple leftT rightT) = mapState render $ focusWrapper focusKey unfocusKey
 -}
 
 
-renderFocus isInnerFocused innerForm = mapUnfocusedSchroed addUnfocusedLineBelow $ mapFocusedSchroed addLineBelow innerForm
+renderFocus isInnerFocused innerForm = mapUnfocusedForm addUnfocusedLineBelow $ mapFocusedForm addLineBelow innerForm
   where
     addLineBelow
       | isInnerFocused = addUnfocusedLineBelow
@@ -185,8 +168,8 @@ renderFocus isInnerFocused innerForm = mapUnfocusedSchroed addUnfocusedLineBelow
 
     horizLine color width = filled color $ rectangle width 2
 
-focusWrapper :: Eq e => e -> e -> Widget e s (Maybe e) -> Widget e (Bool, Widget e s (Maybe e)) (Maybe e)
-focusWrapper keyFocus keyUnfocus widget = foldW (True, widget) step
+focusWrapper :: Eq e => e -> e -> ReactBox e s (Maybe e) -> ReactBox e (Bool, ReactBox e s (Maybe e)) (Maybe e)
+focusWrapper keyFocus keyUnfocus widget = steppingBox (True, widget) step
   where
     step e (False, widget)
       | e == keyFocus = ((True, widget), Nothing)
@@ -194,4 +177,4 @@ focusWrapper keyFocus keyUnfocus widget = foldW (True, widget) step
     step e (True, widget) = case returnedE of
       Just event | event == keyUnfocus -> ((False, newWidget), Nothing)
       otherwise                        -> ((True, newWidget), returnedE)
-      where (newWidget, returnedE) = runW widget e
+      where (newWidget, returnedE) = runBox widget e

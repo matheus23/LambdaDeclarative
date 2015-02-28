@@ -15,7 +15,7 @@ import Data.Vec2 (Vec2)
 import Data.Maybe (fromJust)
 import FRP.Behaviour
 import Control.Automaton
-import Widget
+import ReactBox
 import Util
 
 data TextLine = Line { onLeft :: String, onRight :: String }
@@ -49,15 +49,15 @@ moveRight :: TextLine -> Maybe TextLine
 moveRight (Line left (c:right)) = Just $ Line (c:left) right
 moveRight _ = Nothing
 
-textLineFocusable :: TextStyle -> String -> Widget GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
+textLineFocusable :: TextStyle -> String -> ReactBox GtkEvent (String, Bool -> Form) (Maybe GtkEvent)
 textLineFocusable style content = mapState render $ textLine content
   where
     render line = (toString line, renderToForm line)
     renderToForm line True = text style $ show line
     renderToForm line False = text style $ toString line
 
-textLine :: String -> Widget GtkEvent TextLine (Maybe GtkEvent)
-textLine content = foldW (fromString content) step
+textLine :: String -> ReactBox GtkEvent TextLine (Maybe GtkEvent)
+textLine content = steppingBox (fromString content) step
   where
     step e@(KeyPress (Special Backspace)) (Line (_:left) right) = (Line left right, Nothing)
     step e@(KeyPress (Special ArrRight)) (Line left (c:right)) = (Line (c:left) right, Nothing)

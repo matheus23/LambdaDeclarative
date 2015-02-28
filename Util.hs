@@ -5,13 +5,15 @@ import Graphics.Declarative.Cairo.Form
 import Graphics.Declarative.Physical2D
 
 import FRP.Behaviour
-import Widget
+import ReactBox
 
 import qualified Data.Vec2 as Vec2
 
-widgetToBehaviour :: Widget i s o -> Behaviour i s
-widgetToBehaviour widget = Behaviour (valueW widget) step
-  where step input = widgetToBehaviour $ fst $ runW widget input
+type Widget e s = ReactBox e s (Maybe e)
+
+widgetToBehaviour :: ReactBox i s o -> Behaviour i s
+widgetToBehaviour widget = Behaviour (boxValue widget) step
+  where step input = widgetToBehaviour $ fst $ runBox widget input
 
 runFormBehaviour :: (Double, Double) -> Behaviour GtkEvent Form -> IO ()
 runFormBehaviour align behaviour = do
@@ -20,10 +22,10 @@ runFormBehaviour align behaviour = do
             let newBehaviour = runEvent currentBehaviour input
             return (newBehaviour, value $ newBehaviour)
 
-runFormWidget :: (Double, Double) -> Widget GtkEvent Form any -> IO ()
+runFormWidget :: (Double, Double) -> ReactBox GtkEvent Form any -> IO ()
 runFormWidget align widget = runFormBehaviour (0, 0) $ draggableForm $ windowAligned align $ widgetToBehaviour widget
 
-runFormFocusableWidget :: (Double, Double) -> Widget GtkEvent (Bool -> Form) any -> IO ()
+runFormFocusableWidget :: (Double, Double) -> ReactBox GtkEvent (Bool -> Form) any -> IO ()
 runFormFocusableWidget align widget = runFormWidget align $ mapState ($ True) widget
 
 windowSize :: Behaviour GtkEvent (Int, Int)
