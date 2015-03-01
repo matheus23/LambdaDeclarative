@@ -22,83 +22,40 @@ import WidgetUtilities
 
 main :: IO ()
 main = runFormWidget (0.5, 0.5) $ mapState focused $ mathExprWidget $ Add [Var "a", Var "b", Mul [Var "n", Var "y"]]
-{-main = runFormWidget (0.5, 0.5) $ mapState (centeredHoriz . focused) $ listWidget combine plusWidget $ map stringWidget ["Hello", "World", "awesome", "!"]
-  where
-    stringWidget str = mapState (mapFocusedForm focusRend . snd) $ textEdit style str
-    style = generalFont
-    combine form1 form2 = append Vec2.right [form1, text style " , ", form2]
-    focusRend form = form `atopBorderless` (outlined (solid red) $ rectangleFromBB $ Border.getBoundingBox $ getBorder $ padded 5 form)
-    plusWidget = condReplace replacement $ functionBox (const plusWValue) Just plusWValue
-    plusWValue = mapBothForms (alignHV (0, 0)) $ FocusForm plusFocused plusUnfocused
-    plusSign col = filled col (rectangle 18 6) `atop` filled col (rectangle 6 18)
-    plusUnfocused = plusSign (0.2, 0.2, 0.2) `atop` outlined (solid (0.2, 0.2, 0.2)) (rectangle 30 30)
-    plusFocused = plusSign (1, 1, 1) `atop` filled (0.2, 0.2, 0.2) (rectangle 30 30)
-    replacement (KeyPress (Special Return)) = Just $ (toupleWidget combine FocusLeft (stringWidget "Replace me!", plusWidget), Nothing)
-    replacement _ = Nothing-}
 
 data MathExpr
   = Add [MathExpr]
   | Mul [MathExpr]
   | Var String
 
-data FocusList a = Focus [a] a [a]
+mathExprWidget :: MathExpr -> GtkWidget FocusForm
+mathExprWidget (Var name) = mapState (mapFocusedForm addFocusBorder) $ mapState snd $ textEdit generalFont name
+mathExprWidget (Mul exprs) = mapState renderFocus $ focusWrapper ((== focusKey), (== unfocusKey)) True $ listWidget1 renderMul $ map mathExprWidget exprs
+mathExprWidget (Add exprs) = mapState renderFocus $ focusWrapper ((== focusKey), (== unfocusKey)) True $ listWidget1 renderAdd $ map mathExprWidget exprs
 
-focusList :: [a] -> FocusList a
-focusList (x:ls) = Focus [] x ls
+renderFocus :: (Bool, GtkWidget FocusForm) -> FocusForm
+renderFocus (innerFocused, widget) = applyIf (not innerFocused) (mapFocusedForm addFocusBorder) $ fromFocus innerFocused $ boxValue widget
 
-focusLeftmost :: FocusList a -> FocusList a
-focusLeftmost (Focus (x:left) mid right) = focusLeftmost $ Focus left x (mid:right)
-focusLeftmost focus = focus
-
-focusRightmost :: FocusList a -> FocusList a
-focusRightmost (Focus left mid (x:right)) = focusRightmost $ Focus (mid:left) x right
-focusRightmost focus = focus
-
-renderAddition :: [Form] -> Form
-renderAddition addends = append Vec2.right $ intersperse plusSign (map centeredVert addends)
-  where plusSign = centeredVert $ text generalFont " + "
-
-renderMultiplication :: [Form] -> Form
-renderMultiplication addends = append Vec2.right $ intersperse plusSign (map centeredVert addends)
-  where
-    space = centeredVert $ text generalFont " "
-    plusSign = append Vec2.right [space, filled (textColor generalFont) $ circle (fontSize generalFont / 8), space]
+addFocusBorder :: Form -> Form
+addFocusBorder = addBorder (solid lightBlue) 4
 
 addBorder :: LineStyle -> Double -> Form -> Form
 addBorder lstyle padding form = form `atopBorderless` border
   where border = outlined lstyle $ roundedRectangleFromBB padding $ Border.getBoundingBox $ getBorder $ padded padding form
 
-addFocusBorder = addBorder (solid lightBlue) 4
+renderAdd :: Form -> Form -> Form
+renderAdd addend1 addend2 = append Vec2.right $ map centeredVert [addend1, plusSign, addend2]
+  where plusSign = text generalFont " + "
 
-focusListWidget :: FocusList (GtkWidget s) -> GtkWidget (Bool, FocusList (GtkWidget s))
-focusListWidget initList = steppingBox (False, initList) step
+renderMul :: Form -> Form -> Form
+renderMul factor1 factor2 = append Vec2.right $ map centeredVert [factor1, mulSign, factor2]
   where
-    step (KeyPress (Special ArrLeft)) (True, focus) = ((False, focusLeftmost focus), Nothing)
-    step (KeyPress (Special ArrRight)) (True, focus) = ((False, focusRightmost focus), Nothing)
-    step e (selectionMode, Focus left foc right) = case runBox foc e of
-      (newFoc, Just e) -> stepAfter e (selectionMode, Focus left newFoc right)
-      (newFoc, Nothing) -> ((selectionMode, Focus left newFoc right), Nothing)
-    stepAfter (KeyPress (Special ArrLeft)) (False, Focus (x:left) mid right) = ((False, Focus left x (mid:right)), Nothing)
-    stepAfter (KeyPress (Special ArrRight)) (False, Focus left mid (x:right)) = ((False, Focus (mid:left) x right), Nothing)
-    stepAfter (KeyPress (Special Escape)) (False, focus) = ((True, focus), Nothing)
-    stepAfter e state = (state, Just e)
+    space = centeredVert $ text generalFont " "
+    mulSign = append Vec2.right [space, filled (textColor generalFont) $ circle (fontSize generalFont / 8), space]
 
-renderListExpr :: ([Form] -> Form) -> (Bool, FocusList (GtkWidget FocusForm)) -> FocusForm
-renderListExpr formCombiner (selectionMode, Focus left mid right) = FocusForm
-  { focused = applyIf selectionMode addFocusBorder $ formCombiner $ renderedLeft ++ [focusedMid] ++ renderedRight
-  , unfocused = formCombiner $ renderedLeft ++ [unfocused renderedMid] ++ renderedRight }
-  where
-    renderedLeft = map (unfocused . boxValue) $ reverse left
-    renderedRight = map (unfocused . boxValue) right
-    renderedMid = boxValue mid
-    focusedMid = if not selectionMode then focused renderedMid else unfocused renderedMid
-
---expressionWidget
-
-mathExprWidget :: MathExpr -> ReactBox GtkEvent FocusForm (Maybe GtkEvent)
-mathExprWidget (Var name) = mapState (mapFocusedForm addFocusBorder) $ mapState snd $ textEdit generalFont name
-mathExprWidget (Add exprs) = mapState (renderListExpr renderAddition) $ focusListWidget $ focusList $ map mathExprWidget exprs
-mathExprWidget (Mul exprs) = mapState (renderListExpr renderMultiplication) $ focusListWidget $ focusList $ map mathExprWidget exprs
+focusKey, unfocusKey :: GtkEvent
+focusKey   = KeyPress $ Special Return
+unfocusKey = KeyPress $ Special Escape
 
 generalFont :: TextStyle
 generalFont = font "monospace" 14 -- "sir monospace"
