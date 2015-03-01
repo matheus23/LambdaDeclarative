@@ -31,6 +31,10 @@ condReplace cond otherwiseBox = ReactBox (boxValue otherwiseBox) step
   where step input = cond input `orElse` (condReplace cond newB, out)
           where (newB, out) = runBox otherwiseBox input
 
+wrap :: (ReactBox i v o -> i -> ReactBox i v o) -> ReactBox i v o -> ReactBox i v o
+wrap wrapper box = ReactBox (boxValue box) step
+  where step input = wrap wrapper $ wrapper box input
+
 orElse :: Maybe a -> a -> a
 orElse (Just sth) _ = sth
 orElse Nothing a = a
