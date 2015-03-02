@@ -21,14 +21,16 @@ import FocusForm
 import WidgetUtilities
 
 main :: IO ()
-main = runFormWidget (0.5, 0.5) $ mapState focused $ mathExprWidget $ Add [Var "a", Var "b", Mul [Var "n", Var "y"]]
+main = runFormWidget (0.5, 0.5) $ mapState focused $ mathExprWidget $ Add [Num 2, Var "a", Var "b", Mul [Num 4, Var "n", Var "y"]]
 
 data MathExpr
   = Add [MathExpr]
   | Mul [MathExpr]
+  | Num Int
   | Var String
 
 mathExprWidget :: MathExpr -> GtkWidget FocusForm
+mathExprWidget (Num numb) = mapState (mapFocusedForm addFocusBorder) $ mapState snd $ numWidget generalFont numb
 mathExprWidget (Var name) = mapState (mapFocusedForm addFocusBorder) $ mapState snd $ textEdit generalFont name
 mathExprWidget (Mul exprs) = mapState renderFocus $ focusWrapper ((== focusKey), (== unfocusKey)) True $ listWidget1 renderMul $ map mathExprWidget exprs
 mathExprWidget (Add exprs) = mapState renderFocus $ focusWrapper ((== focusKey), (== unfocusKey)) True $ listWidget1 renderAdd $ map mathExprWidget exprs
@@ -71,8 +73,6 @@ atopBorderless (Bordered border graphicA) (Bordered _ graphicB) = Bordered borde
 textEdit :: TextStyle -> String -> Widget GtkEvent (String, FocusForm)
 textEdit style content = mapState render $ focusWrapper ((== focusKey), (== unfocusKey)) False $ textLine content
   where
-    focusKey = (KeyPress (Special Return))
-    unfocusKey = (KeyPress (Special Escape))
     render (hasFocus, widget) = (str, fromFocus hasFocus rendered)
       where (str, rendered) = renderLine $ boxValue widget
     renderLine line@(Line left right) = (toString line, FocusForm (withCursor (reverse left) right) (text style $ toString line))
@@ -81,3 +81,22 @@ textEdit style content = mapState render $ focusWrapper ((== focusKey), (== unfo
     withBackground form = form `atopBorderless` (filled (0.2, 0.2, 0.2) $ roundedRectangleFromBB padding $ Border.getBoundingBox $ getBorder $ padded padding form)
     padding = 2 + fontSize style / 10
     greyStyle = style { textColor = grey }
+
+numWidget :: TextStyle -> Int -> Widget GtkEvent (Int, FocusForm)
+numWidget style number = mapState render $ focusWrapper ((== focusKey), (== unfocusKey)) False $ steppingBox number step
+  where
+    render (hasFocus, widget) = (number, fromFocus hasFocus rendered)
+      where
+        number = boxValue widget
+        rendered = FocusForm (renderNumAndArrows number) (centeredHoriz $ text style $ show number)
+
+    arrowUp size = filled (0.4, 0.4, 0.4) $ noBorder $ closedPath $ pathPoint (-size, 0) `lineConnect` pathPoint (0, -size) `lineConnect` pathPoint (size, 0)
+    arrowDown size = scale (1, -1) $ arrowUp size
+    renderNumAndArrows number = append Vec2.down [append Vec2.up [txt, arrowUp size], arrowDown size]
+      where
+        size = 0.4 * fontSize style
+        txt = centeredHoriz $ text style $ show number
+
+    step (KeyPress (Special ArrUp)) num = (num+1, Nothing)
+    step (KeyPress (Special ArrDown)) num = (num-1, Nothing)
+    step e num = (num, Just e)
